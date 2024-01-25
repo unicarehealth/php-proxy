@@ -2,4 +2,4 @@
 .vscode/
 
 vendor/
-config.php
+proxy-config.php
