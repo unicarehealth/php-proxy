@@ -239,8 +239,8 @@ class Proxy
 	 */
 	public static function loadConfig()
 	{
-		if (file_exists('config.php')) {
-			include 'config.php';
+		if (file_exists('proxy-config.php')) {
+			include 'proxy-config.php';
 		}
 	}
 
@@ -293,7 +293,7 @@ class Proxy
 		// https://stackoverflow.com/a/5519834.
 		return self::ri( $_SERVER['CONTENT_TYPE'], self::ri(  $_SERVER['HTTP_CONTENT_TYPE'], '' ) );
 	}
-	
+
 	/**
 	 * @param string[] $skippedHeaders
 	 * @return string[]
@@ -301,7 +301,7 @@ class Proxy
 	protected static function getIncomingRequestHeaders($skippedHeaders = [])
 	{
 		$_SERVER['HTTP_CONTENT_TYPE'] = self::getContentType();
-		
+
 		$results = [];
 		foreach ($_SERVER as $key => $value) {
 			if (in_array($key, $skippedHeaders)) {
@@ -373,7 +373,7 @@ class Proxy
 					}
 				}
 			}
-			
+
 			if ('application/json' !== strtolower(self::getContentType())) {
 				curl_setopt($request, CURLOPT_POSTFIELDS, static::build_post_fields($data + $_POST));
 			} else {
