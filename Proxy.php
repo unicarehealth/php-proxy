@@ -97,6 +97,12 @@ class Proxy
     public static $HEADER_HTTP_PROXY_TARGET_URL = 'HTTP_PROXY_TARGET_URL';
 
     /**
+     * Name of the target HTTP method override header
+     * @var string
+     */
+    public static $HEADER_HTTP_PROXY_TARGET_HTTP_METHOD = 'HTTP_PROXY_TARGET_HTTP_METHOD';
+
+    /**
      * Line break for debug purposes
      * @var string
      */
@@ -111,6 +117,7 @@ class Proxy
             static::$HEADER_HTTP_PROXY_TARGET_URL,
             static::$HEADER_HTTP_PROXY_AUTH,
             static::$HEADER_HTTP_PROXY_DEBUG,
+            static::$HEADER_HTTP_PROXY_TARGET_HTTP_METHOD,
             'HTTP_HOST',
             'HTTP_ACCEPT_ENCODING'
         ];
@@ -228,6 +235,16 @@ class Proxy
     }
 
     /**
+     * @return void
+     */
+    public static function loadConfig()
+    {
+        if (file_exists('config.php')) {
+            include 'config.php';
+        }
+    }
+
+    /**
      * @return string
      */
     protected static function getTargetUrl()
@@ -293,6 +310,24 @@ class Proxy
         return $results;
     }
 
+     /**
+      * Merge pull request https://github.com/zounar/php-proxy/pull/17/files
+      * https://gist.github.com/yisraeldov/ec29d520062575c204be7ab71d3ecd2f
+      */
+    protected static function build_post_fields($data, $existingKeys = '', &$returnArray = [])
+    {
+        if(($data instanceof CURLFile) or !(is_array($data) or is_object($data))) {
+            $returnArray[$existingKeys]=$data;
+            return $returnArray;
+        }
+        else {
+            foreach ($data as $key => $item) {
+                static::build_post_fields($item,$existingKeys?$existingKeys."[$key]":$key,$returnArray);
+            }
+            return $returnArray;
+        }
+    }
+
     /**
      * @param string $targetURL
      * @return false|resource
@@ -302,10 +337,11 @@ class Proxy
         $request = curl_init($targetURL);
 
         // Set input data
-        $requestMethod = strtoupper(static::ri($_SERVER['REQUEST_METHOD']));
-        if ($requestMethod === "PUT" || $requestMethod === "PATCH") {
+        $incomingRequestMethod = strtoupper(static::ri($_SERVER['REQUEST_METHOD']));
+
+        if ($incomingRequestMethod === 'PUT' || $incomingRequestMethod === 'PATCH') {
             curl_setopt($request, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
-        } elseif ($requestMethod === "POST") {
+        } elseif ($incomingRequestMethod === 'POST') {
             $data = array();
 
             if (!empty($_FILES)) {
@@ -324,18 +360,27 @@ class Proxy
                 }
             }
 
-            curl_setopt($request, CURLOPT_POSTFIELDS, $data + $_POST);
+            curl_setopt($request, CURLOPT_POSTFIELDS, static::build_post_fields($data + $_POST));
         }
 
         $headers = static::getIncomingRequestHeaders(static::getSkippedHeaders());
-
-        curl_setopt_array($request, [
+        $curlSettings = [
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HEADER => static::$CURLOPT_HEADER,
             CURLOPT_RETURNTRANSFER => static::$CURLOPT_RETURNTRANSFER,
             CURLINFO_HEADER_OUT => true,
             CURLOPT_HTTPHEADER => $headers
-        ]);
+        ];
+
+        if ($incomingRequestMethod === 'POST') {
+            // Check if target request should use a different HTTP method:
+            $targetRequestMethod = strtoupper(static::ri($_SERVER[static::$HEADER_HTTP_PROXY_TARGET_HTTP_METHOD], $incomingRequestMethod));
+            if ($targetRequestMethod !== $incomingRequestMethod) {
+                $curlSettings[CURLOPT_CUSTOMREQUEST] = $targetRequestMethod;
+            }
+        }
+
+        curl_setopt_array($request, $curlSettings);
 
         return $request;
     }
@@ -460,6 +505,7 @@ class Proxy
 if (!Proxy::isInstalledWithComposer()) {
     Proxy::checkCompatibility();
     Proxy::registerErrorHandlers();
+    Proxy::loadConfig();
     $responseCode = Proxy::run();
 
     if (Proxy::isResponseCodeOk($responseCode)) {
