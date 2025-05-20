@@ -103,6 +103,12 @@ class Proxy
 	public static $HEADER_HTTP_PROXY_TARGET_HTTP_METHOD = 'HTTP_PROXY_TARGET_HTTP_METHOD';
 
 	/**
+	 * Name of the base64 to octet-stream conversion switch header
+	 * @var string
+	 */
+	public static $HEADER_HTTP_PROXY_BASE64_TO_OCTET_STREAM = 'HTTP_PROXY_BASE64_TO_OCTET_STREAM';
+
+	/**
 	 * Line break for debug purposes
 	 * @var string
 	 */
@@ -118,6 +124,7 @@ class Proxy
 			static::$HEADER_HTTP_PROXY_AUTH,
 			static::$HEADER_HTTP_PROXY_DEBUG,
 			static::$HEADER_HTTP_PROXY_TARGET_HTTP_METHOD,
+			static::$HEADER_HTTP_PROXY_BASE64_TO_OCTET_STREAM,
 			'HTTP_HOST',
 			'HTTP_ACCEPT_ENCODING'
 		];
@@ -267,6 +274,14 @@ class Proxy
 	}
 
 	/**
+	 * @return boolean
+	 */
+	protected static function isBase64ToOctetStream()
+	{
+		return static::ri($_SERVER[static::$HEADER_HTTP_PROXY_BASE64_TO_OCTET_STREAM], 'false') === 'true';
+	}
+
+	/**
 	 * @return bool
 	 */
 	protected static function isDebug()
@@ -314,7 +329,7 @@ class Proxy
 				$key = substr($loweredKey, strlen('http_'));
 				// Replace underscores with dashes
 				$key = str_replace('_', '-', $key);
-				// Capital each word
+				// Capitalise each word
 				$key = ucwords($key, '-');
 
 				$results[] = "$key: $value";
@@ -353,7 +368,13 @@ class Proxy
 		// Set input data
 		$incomingRequestMethod = strtoupper(static::ri($_SERVER['REQUEST_METHOD']));
 
-		if ($incomingRequestMethod === 'PUT' || $incomingRequestMethod === 'PATCH') {
+		$headers = static::getIncomingRequestHeaders(static::getSkippedHeaders());
+
+		if (self::isBase64ToOctetStream() && 'application/octet-stream' !== strtolower(self::getContentType())) {
+			curl_setopt($request, CURLOPT_POSTFIELDS, base64_decode(file_get_contents('php://input')));
+			$headers = array_filter($headers, function ($header) { return !str_starts_with(strtolower($header), 'content-type:'); });
+			$headers[] = 'Content-Type:application/octet-stream';
+		} elseif ($incomingRequestMethod === 'PUT' || $incomingRequestMethod === 'PATCH') {
 			curl_setopt($request, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
 		} elseif ($incomingRequestMethod === 'POST') {
 			$data = array();
@@ -381,7 +402,6 @@ class Proxy
 			}
 		}
 
-		$headers = static::getIncomingRequestHeaders(static::getSkippedHeaders());
 		$curlSettings = [
 			CURLOPT_FOLLOWLOCATION => true,
 			CURLOPT_HEADER => static::$CURLOPT_HEADER,
